@@ -1,0 +1,16 @@
+﻿# Segredos / configs locais
+.env
+*.env
+secrets.toml
+*.toml
+*.json
+
+# Python / venv / cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Dados locais (se tiver)
+data/
