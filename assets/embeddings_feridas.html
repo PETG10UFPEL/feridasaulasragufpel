@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Embeddings — Feridas Crônicas</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #f3f7fb;
+    color: #0f172a;
+    padding: 30px 20px;
+    min-height: 100vh;
+  }
+
+  .page { max-width: 900px; margin: 0 auto; }
+
+  /* HEADER */
+  .header { text-align: center; margin-bottom: 40px; }
+  .header .tag {
+    display: inline-block;
+    background: linear-gradient(135deg, #0ea5e9, #0369a1);
+    color: white;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 18px;
+    border-radius: 20px;
+    margin-bottom: 14px;
+  }
+  .header h1 {
+    font-size: 38px;
+    font-weight: 900;
+    line-height: 1.1;
+    background: linear-gradient(135deg, #0ea5e9, #7dd3fc, #ffffff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header h1 span {
+    background: linear-gradient(135deg, #f472b6, #e879f9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .header p { color: #475569; font-size: 15px; margin-top: 10px; }
+
+  /* SECTION TITLE */
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #0ea5e9;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, #0ea5e933, transparent);
+  }
+
+  /* CARD BASE */
+  .card {
+    background: #ffffff;
+    border: 1px solid #dbe5f0;
+    border-radius: 16px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+  }
+
+  /* ANALOGY BOX */
+  .analogy-box {
+    display: grid;
+    grid-template-columns: 1fr 60px 1fr;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .analogy-side {
+    background: #f1f5f9;
+    border: 1px solid #dbe5f0;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+  }
+  .analogy-side .emoji { font-size: 32px; margin-bottom: 8px; }
+  .analogy-side .label { font-size: 13px; color: #475569; margin-bottom: 4px; }
+  .analogy-side .value { font-size: 14px; font-weight: 600; color: #0f172a; }
+  .arrow-mid { text-align: center; font-size: 28px; color: #0ea5e9; }
+
+  /* VECTOR TABLE */
+  .word-row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  .word-label { font-weight: 700; font-size: 13px; min-width: 190px; color: #0f172a; }
+  .vec-cell {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-family: monospace;
+    color: #0369a1;
+    min-width: 52px;
+    text-align: center;
+  }
+  .vec-cell.neg { color: #b91c1c; }
+  .vec-cell.highlight { border-color: #0ea5e9; background: #e0f2fe; }
+  .dim-label { font-size: 10px; color: #475569; text-align: center; min-width: 52px; }
+
+  /* PIPELINE */
+  .pipeline { display: flex; align-items: stretch; gap: 0; overflow-x: auto; padding: 10px 0; }
+  .pipe-step {
+    flex: 1;
+    min-width: 120px;
+    background: #ffffff;
+    border: 1px solid #dbe5f0;
+    border-radius: 12px;
+    padding: 16px 12px;
+    text-align: center;
+    position: relative;
+  }
+  .pipe-step + .pipe-step { margin-left: 10px; }
+  .pipe-step::after {
+    content: '→';
+    position: absolute;
+    right: -14px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    color: #0ea5e9;
+    z-index: 2;
+  }
+  .pipe-step:last-child::after { display: none; }
+  .pipe-icon { font-size: 28px; margin-bottom: 8px; }
+  .pipe-title { font-size: 12px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+  .pipe-desc { font-size: 11px; color: #64748b; line-height: 1.4; }
+  .pipe-step.highlight-step { background: #0c2340; border-color: #0ea5e9; }
+  .pipe-step.highlight-step .pipe-title { color: #38bdf8; }
+
+  /* RAG FLOW */
+  .rag-flow { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .rag-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffff;
+    border: 1px solid #dbe5f0;
+    border-radius: 12px;
+    padding: 14px 18px;
+  }
+  .rag-num {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0ea5e9, #0369a1);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 14px; flex-shrink: 0; color: white;
+  }
+  .rag-content { flex: 1; }
+  .rag-title { font-size: 14px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+  .rag-desc { font-size: 12px; color: #64748b; line-height: 1.4; }
+  .rag-badge {
+    font-size: 11px; font-weight: 700;
+    background: #0c2340; color: #38bdf8;
+    border: 1px solid #0ea5e955;
+    padding: 3px 10px; border-radius: 20px; white-space: nowrap;
+  }
+
+  /* SIMILARITY */
+  .sim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+  .sim-card {
+    background: #ffffff; border: 1px solid #dbe5f0;
+    border-radius: 12px; padding: 14px; text-align: center;
+  }
+  .sim-emoji { font-size: 24px; margin-bottom: 6px; }
+  .sim-text { font-size: 12px; color: #475569; margin-bottom: 8px; }
+  .sim-bar-bg { background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden; }
+  .sim-bar { height: 100%; border-radius: 4px; }
+  .sim-pct { font-size: 12px; font-weight: 700; margin-top: 4px; }
+
+  /* WHY GRID */
+  .why-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .why-card { background: #ffffff; border: 1px solid #dbe5f0; border-radius: 12px; padding: 16px; }
+  .why-card .icon { font-size: 24px; margin-bottom: 8px; }
+  .why-card .title { font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+  .why-card .desc { font-size: 12px; color: #64748b; line-height: 1.5; }
+
+  /* SCATTER */
+  .scatter-wrap { display: flex; gap: 20px; align-items: flex-start; margin-top: 12px; }
+  .scatter-box {
+    flex: 1; background: #ffffff; border: 1px solid #dbe5f0;
+    border-radius: 12px; position: relative; height: 200px; overflow: hidden;
+  }
+  .scatter-box .axis-x { position: absolute; bottom: 22px; left: 12px; right: 12px; height: 1px; background: #cbd5e1; }
+  .scatter-box .axis-y { position: absolute; top: 12px; bottom: 12px; left: 32px; width: 1px; background: #cbd5e1; }
+  .dot { position: absolute; width: 11px; height: 11px; border-radius: 50%; transform: translate(-50%, -50%); }
+  .dot-label { position: absolute; font-size: 9px; font-weight: 700; transform: translate(-50%, -150%); white-space: nowrap; }
+  .scatter-legend { width: 175px; font-size: 11px; color: #64748b; }
+  .legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* CONCEPTS GRID */
+  .concept-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+  .concept-card {
+    border-radius: 12px; padding: 14px; border: 1px solid;
+    text-align: center;
+  }
+  .concept-card .c-emoji { font-size: 22px; margin-bottom: 6px; }
+  .concept-card .c-term { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+  .concept-card .c-desc { font-size: 11px; line-height: 1.4; }
+
+  /* FOOTER */
+  .footer-note {
+    background: linear-gradient(135deg, #f0f9ff, #ffffff);
+    border: 1px solid #7dd3fc88;
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-top: 20px;
+    font-size: 13px;
+    color: #334155;
+    line-height: 1.7;
+  }
+  .footer-note strong { color: #0369a1; }
+  .footer-note a { color: #0369a1; text-decoration: none; border-bottom: 1px solid #7dd3fc; }
+
+  /* HIGHLIGHT BOX */
+  .highlight-box {
+    background: #0c2340;
+    border: 1px solid #0ea5e944;
+    border-radius: 12px;
+    padding: 14px 18px;
+    margin: 14px 0;
+  }
+
+  @media (max-width: 600px) {
+    .analogy-box { grid-template-columns: 1fr; }
+    .arrow-mid { transform: rotate(90deg); }
+    .why-grid { grid-template-columns: 1fr; }
+    .sim-grid { grid-template-columns: 1fr; }
+    .concept-grid { grid-template-columns: 1fr 1fr; }
+    .scatter-wrap { flex-direction: column; }
+    .scatter-legend { width: 100%; }
+    .header h1 { font-size: 26px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- BANNER + LINKS INSTITUCIONAIS -->
+  <a href="https://petg10ufpel.github.io/petg10/" target="_blank" style="display:block; text-decoration:none;">
+    <center><img src="banner.png" alt="PET-Saúde G10 UFPel — Feridas Crônicas"
+      style="width:60%; max-width:900px; height:auto; border-radius:14px; box-shadow:0 10px 30px rgba(15,23,42,.12);"></center>
+  </a>
+
+  <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:18px; margin:14px 0 24px 0;">
+    <img src="instagram.png" style="height:34px; width:auto;">
+    <a href="https://www.instagram.com/amorapele_ufpel/" target="_blank">Amor à Pele</a>,
+    <a href="https://www.instagram.com/g10petsaude/" target="_blank">PET G10</a> |
+    <img src="logo.enfermagem.png" style="height:34px; width:auto;">
+    <a href="https://wp.ufpel.edu.br/fen/" target="_blank">Faculdade de Enfermagem UFPel</a>
+  </div>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="tag">🩹 Guia Visual — RAG-AI</div>
+    <h1>Embeddings em <span>Feridas Crônicas</span></h1>
+    <p>Como a IA entende o material da aula e responde com precisão clínica</p>
+    <p style="font-size:13px; color:#94a3b8; margin-top:6px;">
+      Profa. <strong style="color:#7dd3fc;">Adrize Rutz Porto</strong> — Depto. Enfermagem em Saúde Coletiva — FEn/UFPel
+    </p>
+  </div>
+
+  <!-- SEÇÃO 1: O QUE É UM EMBEDDING -->
+  <div class="section-title">01 — O que é um Embedding?</div>
+  <div class="card">
+    <p style="color:#475569; font-size:14px; line-height:1.7; margin-bottom:16px;">
+      Um <strong style="color:#0ea5e9">embedding</strong> transforma palavras, frases ou documentos inteiros em uma lista de números (vetor).
+      Esses números <em>capturam o significado semântico</em> — conceitos relacionados ficam próximos no espaço vetorial,
+      mesmo que as palavras sejam diferentes.
+    </p>
+
+    <div class="analogy-box">
+      <div class="analogy-side">
+        <div class="emoji">📄</div>
+        <div class="label">Texto da aula</div>
+        <div class="value">"Úlcera por pressão em região sacral, fase inflamatória, exsudato moderado"</div>
+      </div>
+      <div class="arrow-mid">⟶</div>
+      <div class="analogy-side">
+        <div class="emoji">🔢</div>
+        <div class="label">Embedding (simplificado)</div>
+        <div class="value" style="font-family:monospace; color:#38bdf8; font-size:12px;">[0.9, −0.3, 0.7, 0.8, −0.1, 0.6, ...]</div>
+      </div>
+    </div>
+
+    <!-- WORD VECTORS TABLE -->
+    <p style="font-size:12px; color:#64748b; margin:16px 0 8px;">Exemplo — dimensões semânticas de conceitos de feridas (valores simplificados):</p>
+    <div style="overflow-x:auto;">
+      <div style="display:flex; gap:8px; margin-bottom:4px; margin-left:198px;">
+        <div class="dim-label">pressão</div>
+        <div class="dim-label">infecção</div>
+        <div class="dim-label">cicatrização</div>
+        <div class="dim-label">exsudato</div>
+        <div class="dim-label">curativo</div>
+        <div class="dim-label">isquemia</div>
+      </div>
+      <div class="word-row">
+        <div class="word-label">🛏️ Úlcera por pressão</div>
+        <div class="vec-cell highlight">0.9</div>
+        <div class="vec-cell">0.4</div>
+        <div class="vec-cell neg">−0.2</div>
+        <div class="vec-cell">0.6</div>
+        <div class="vec-cell">0.7</div>
+        <div class="vec-cell">0.5</div>
+      </div>
+      <div class="word-row">
+        <div class="word-label">🦵 Úlcera venosa</div>
+        <div class="vec-cell neg">−0.1</div>
+        <div class="vec-cell">0.5</div>
+        <div class="vec-cell">0.3</div>
+        <div class="vec-cell highlight">0.9</div>
+        <div class="vec-cell">0.7</div>
+        <div class="vec-cell neg">−0.3</div>
+      </div>
+      <div class="word-row">
+        <div class="word-label">🩸 Úlcera arterial</div>
+        <div class="vec-cell">0.2</div>
+        <div class="vec-cell">0.6</div>
+        <div class="vec-cell neg">−0.4</div>
+        <div class="vec-cell neg">−0.2</div>
+        <div class="vec-cell">0.5</div>
+        <div class="vec-cell highlight">0.9</div>
+      </div>
+      <div class="word-row">
+        <div class="word-label">🌿 Curativo c/ calêndula</div>
+        <div class="vec-cell neg">−0.2</div>
+        <div class="vec-cell neg">−0.4</div>
+        <div class="vec-cell highlight">0.8</div>
+        <div class="vec-cell">0.3</div>
+        <div class="vec-cell highlight">0.9</div>
+        <div class="vec-cell neg">−0.1</div>
+      </div>
+    </div>
+
+    <!-- 2D SCATTER -->
+    <p style="font-size:12px; color:#64748b; margin:20px 0 8px;">
+      Redução para 2D — conceitos semanticamente próximos se agrupam no espaço vetorial:
+    </p>
+    <div class="scatter-wrap">
+      <div class="scatter-box">
+        <div class="axis-x"></div>
+        <div class="axis-y"></div>
+
+        <!-- Cluster: úlceras por pressão -->
+        <div class="dot" style="background:#0ea5e9; left:28%; top:28%;"></div>
+        <div class="dot-label" style="color:#0ea5e9; left:28%; top:28%;">🛏️ U. pressão</div>
+        <div class="dot" style="background:#38bdf8; left:20%; top:40%;"></div>
+        <div class="dot-label" style="color:#38bdf8; left:20%; top:40%;">📐 Escala Braden</div>
+        <div class="dot" style="background:#7dd3fc; left:36%; top:22%;"></div>
+        <div class="dot-label" style="color:#7dd3fc; left:36%; top:22%;">🔄 Decúbito</div>
+
+        <!-- Cluster: úlceras vasculares -->
+        <div class="dot" style="background:#f472b6; left:72%; top:30%;"></div>
+        <div class="dot-label" style="color:#f472b6; left:72%; top:30%;">🦵 U. venosa</div>
+        <div class="dot" style="background:#e879f9; left:80%; top:22%;"></div>
+        <div class="dot-label" style="color:#e879f9; left:80%; top:22%;">🩸 U. arterial</div>
+        <div class="dot" style="background:#c084fc; left:78%; top:40%;"></div>
+        <div class="dot-label" style="color:#c084fc; left:78%; top:40%;">🩺 ABI</div>
+
+        <!-- Cluster: curativos / plantas -->
+        <div class="dot" style="background:#4ade80; left:48%; top:72%;"></div>
+        <div class="dot-label" style="color:#4ade80; left:48%; top:72%;">🌿 Calêndula</div>
+        <div class="dot" style="background:#86efac; left:58%; top:78%;"></div>
+        <div class="dot-label" style="color:#86efac; left:58%; top:78%;">🍯 Mel</div>
+        <div class="dot" style="background:#a3e635; left:40%; top:80%;"></div>
+        <div class="dot-label" style="color:#a3e635; left:40%; top:80%;">🌱 Babosa</div>
+
+        <div style="position:absolute; bottom:4px; right:8px; font-size:10px; color:#475569;">dimensão 1 →</div>
+        <div style="position:absolute; top:8px; left:4px; font-size:10px; color:#475569; writing-mode:vertical-rl; transform:rotate(180deg);">dimensão 2 →</div>
+      </div>
+      <div class="scatter-legend">
+        <p style="font-size:11px; font-weight:700; color:#0f172a; margin-bottom:8px;">Clusters formados:</p>
+        <div class="legend-item"><div class="legend-dot" style="background:#0ea5e9;"></div><span>Úlceras por pressão + prevenção</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f472b6;"></div><span>Úlceras vasculares + avaliação</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#4ade80;"></div><span>Plantas medicinais + curativos</span></div>
+        <p style="font-size:11px; color:#64748b; margin-top:10px; line-height:1.5;">
+          A IA aprende que <strong style="color:#7dd3fc">Escala Braden</strong> e <strong style="color:#7dd3fc">úlcera por pressão</strong>
+          estão relacionadas — sem ninguém explicar isso explicitamente!
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO 2: CONCEITOS-CHAVE INDEXADOS -->
+  <div class="section-title">02 — Conceitos Indexados da Aula</div>
+  <div class="card">
+    <p style="color:#475569; font-size:14px; line-height:1.7; margin-bottom:16px;">
+      O sistema RAG indexou o material completo da Profa. Adrize — cada conceito abaixo está representado
+      como um vetor na base de dados. Ao fazer uma pergunta, a IA recupera os trechos mais relevantes.
+    </p>
+    <div class="concept-grid">
+      <div class="concept-card" style="border-color:#0ea5e955; background:#e0f2fe;">
+        <div class="c-emoji">🛏️</div>
+        <div class="c-term" style="color:#0369a1;">Úlceras por Pressão</div>
+        <div class="c-desc" style="color:#334155;">Classificação por estágios, fatores de risco, Escala Braden, prevenção com decúbito</div>
+      </div>
+      <div class="concept-card" style="border-color:#f472b655; background:#fdf4ff;">
+        <div class="c-emoji">🦵</div>
+        <div class="c-term" style="color:#9333ea;">Úlceras Vasculares</div>
+        <div class="c-desc" style="color:#334155;">Venosas, arteriais, mistas — diagnóstico diferencial, ABI, terapia compressiva</div>
+      </div>
+      <div class="concept-card" style="border-color:#f59e0b55; background:#fffbeb;">
+        <div class="c-emoji">🩸</div>
+        <div class="c-term" style="color:#b45309;">Úlceras Diabéticas</div>
+        <div class="c-desc" style="color:#334155;">Neuropatia, isquemia, classificação Wagner, descarga de pressão plantar</div>
+      </div>
+      <div class="concept-card" style="border-color:#22c55e55; background:#f0fdf4;">
+        <div class="c-emoji">🔄</div>
+        <div class="c-term" style="color:#15803d;">Fases da Cicatrização</div>
+        <div class="c-desc" style="color:#334155;">Hemostasia → Inflamação → Proliferação → Remodelação. Quando a ferida fica crônica?</div>
+      </div>
+      <div class="concept-card" style="border-color:#0ea5e955; background:#f0f9ff;">
+        <div class="c-emoji">🧹</div>
+        <div class="c-term" style="color:#0369a1;">Desbridamento</div>
+        <div class="c-desc" style="color:#334155;">Cirúrgico, enzimático, mecânico, autolítico — Escada de complexidade de Eriksson</div>
+      </div>
+      <div class="concept-card" style="border-color:#ef444455; background:#fff1f2;">
+        <div class="c-emoji">🦠</div>
+        <div class="c-term" style="color:#b91c1c;">Controle de Infecção</div>
+        <div class="c-desc" style="color:#334155;">Biofilme, carga bacteriana, antimicrobianos tópicos, índice terapêutico (TI)</div>
+      </div>
+      <div class="concept-card" style="border-color:#8b5cf655; background:#f5f3ff;">
+        <div class="c-emoji">🩹</div>
+        <div class="c-term" style="color:#6d28d9;">Curativos</div>
+        <div class="c-desc" style="color:#334155;">Seleção por exsudato, alginatos, espumas, NPWT, hidrogel, hidrocoloide</div>
+      </div>
+      <div class="concept-card" style="border-color:#10b98155; background:#ecfdf5;">
+        <div class="c-emoji">🌿</div>
+        <div class="c-term" style="color:#065f46;">Plantas Medicinais</div>
+        <div class="c-desc" style="color:#334155;">Calêndula, babosa, mel, própolis — evidências e uso em curativos alternativos</div>
+      </div>
+      <div class="concept-card" style="border-color:#f97316 55; background:#fff7ed;">
+        <div class="c-emoji">📐</div>
+        <div class="c-term" style="color:#c2410c;">Escalas Clínicas</div>
+        <div class="c-desc" style="color:#334155;">Braden, Norton, Waterlow, Wagner — avaliação de risco e classificação de feridas</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO 3: POR QUE FERIDAS CRÓNICAS PRECISA DE EMBEDDINGS -->
+  <div class="section-title">03 — Por que Feridas Crônicas precisa de Embeddings?</div>
+  <div class="card">
+    <p style="color:#475569; font-size:14px; line-height:1.7; margin-bottom:16px;">
+      Uma IA genérica confunde uma <em>recomendação clínica especializada</em> com informação imprecisa da internet.
+      Os embeddings resolvem isso indexando o conhecimento específico da aula da Profa. Adrize.
+    </p>
+    <div class="why-grid">
+      <div class="why-card">
+        <div class="icon">🔍</div>
+        <div class="title">Busca por Significado</div>
+        <div class="desc">A IA entende que "escaras" e "úlceras por pressão" são o mesmo conceito, mesmo sem a palavra exata na pergunta.</div>
+      </div>
+      <div class="why-card">
+        <div class="icon">📋</div>
+        <div class="title">Conhecimento da Aula</div>
+        <div class="desc">O material da Profa. Adrize é indexado: protocolos, escalas, plantas medicinais, classificações e estudos de caso.</div>
+      </div>
+      <div class="why-card">
+        <div class="icon">🎯</div>
+        <div class="title">Resposta Didática</div>
+        <div class="desc">A IA recupera exatamente o conteúdo certo para cada pergunta do estudante — tipo de ferida, fase, tratamento.</div>
+      </div>
+      <div class="why-card">
+        <div class="icon">🛡️</div>
+        <div class="title">Sem "Alucinação"</div>
+        <div class="desc">Sem embeddings, a IA inventa dados. Com eles, ela só responde com base no material real da disciplina.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO 4: SIMILARIDADE -->
+  <div class="section-title">04 — Como a Similaridade Funciona</div>
+  <div class="card">
+    <p style="color:#475569; font-size:14px; line-height:1.7;">
+      Quando o estudante faz uma pergunta, ela também é transformada em embedding. O sistema compara matematicamente
+      com os trechos indexados da aula e recupera os mais relevantes.
+    </p>
+
+    <div class="highlight-box">
+      <p style="font-size:13px; color:#94a3b8; margin-bottom:6px;">❓ Pergunta do estudante:</p>
+      <p style="font-size:15px; font-weight:600; color:#f0f9ff;">"Qual curativo usar em ferida com muito exsudato e suspeita de infecção?"</p>
+      <p style="font-size:12px; color:#38bdf8; margin-top:6px;">→ Vira vetor: [0.3, 0.9, −0.1, 0.8, 0.7, ...]</p>
+    </div>
+
+    <div class="sim-grid">
+      <div class="sim-card">
+        <div class="sim-emoji">📄</div>
+        <div class="sim-text">Controle infecção + antimicrobianos tópicos (Eriksson 2022)</div>
+        <div class="sim-bar-bg"><div class="sim-bar" style="width:91%; background:linear-gradient(to right, #0ea5e9, #38bdf8);"></div></div>
+        <div class="sim-pct" style="color:#0ea5e9;">91% similar ✓</div>
+      </div>
+      <div class="sim-card">
+        <div class="sim-emoji">📄</div>
+        <div class="sim-text">Seleção de curativos por exsudato e carga bacteriana</div>
+        <div class="sim-bar-bg"><div class="sim-bar" style="width:83%; background:linear-gradient(to right, #a855f7, #c084fc);"></div></div>
+        <div class="sim-pct" style="color:#a855f7;">83% similar ✓</div>
+      </div>
+      <div class="sim-card">
+        <div class="sim-emoji">📄</div>
+        <div class="sim-text">Escala de Braden — avaliação de risco de pressão</div>
+        <div class="sim-bar-bg"><div class="sim-bar" style="width:14%; background:#ef4444;"></div></div>
+        <div class="sim-pct" style="color:#ef4444;">14% similar ✗</div>
+      </div>
+    </div>
+
+    <p style="font-size:12px; color:#64748b; margin-top:12px; line-height:1.6;">
+      ✅ O sistema corretamente prioriza o conteúdo sobre <strong>infecção e curativos</strong> e descarta
+      o trecho sobre escala de Braden, que não é relevante para essa pergunta.
+    </p>
+  </div>
+
+  <!-- SEÇÃO 5: PIPELINE RAG COMPLETO -->
+  <div class="section-title">05 — Pipeline Completo: RAG para Feridas Crônicas</div>
+  <div class="card">
+    <p style="color:#475569; font-size:13px; line-height:1.6; margin-bottom:20px;">
+      <strong style="color:#f472b6">RAG = Retrieval Augmented Generation</strong> — a IA primeiro
+      <em>busca</em> nos documentos da aula indexados, depois <em>gera</em> a resposta com base no que encontrou.
+      O resultado é uma resposta didática fundamentada no material real, não em dados genéricos.
+    </p>
+
+    <!-- FASE 1 -->
+    <p style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">
+      Fase 1 — Indexação (feita pelo administrador, uma vez)
+    </p>
+    <div class="pipeline">
+      <div class="pipe-step">
+        <div class="pipe-icon">📁</div>
+        <div class="pipe-title">Documentos</div>
+        <div class="pipe-desc">PDFs e DOCXs da aula, artigos, protocolos — organizados em subpastas no Drive</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">✂️</div>
+        <div class="pipe-title">Chunking</div>
+        <div class="pipe-desc">Divide em trechos de ~900 tokens com sobreposição de 150</div>
+      </div>
+      <div class="pipe-step highlight-step">
+        <div class="pipe-icon">🧮</div>
+        <div class="pipe-title">Embeddings</div>
+        <div class="pipe-desc">Gemini embedding-001 transforma cada trecho em vetor numérico</div>
+      </div>
+      <div class="pipe-step">
+        <div class="pipe-icon">🗄️</div>
+        <div class="pipe-title">Vector DB</div>
+        <div class="pipe-desc">Vetores salvos no Chroma DB (local ou cloud)</div>
+      </div>
+    </div>
+
+    <div style="height:1px; background:#dbe5f0; margin:20px 0;"></div>
+
+    <!-- FASE 2 -->
+    <p style="font-size:12px; font-weight:700; color:#64748b; margin-bottom:10px; text-transform:uppercase; letter-spacing:1px;">
+      Fase 2 — Resposta em tempo real (cada pergunta do estudante)
+    </p>
+    <div class="rag-flow">
+      <div class="rag-row">
+        <div class="rag-num">1</div>
+        <div class="rag-content">
+          <div class="rag-title">Estudante faz uma pergunta (texto ou voz 🎤)</div>
+          <div class="rag-desc">"Quais são os critérios para classificar uma ferida como crônica?"</div>
+        </div>
+        <div class="rag-badge">💬 Input</div>
+      </div>
+      <div class="rag-row">
+        <div class="rag-num">2</div>
+        <div class="rag-content">
+          <div class="rag-title">Pergunta vira Embedding</div>
+          <div class="rag-desc">Mesma API de embeddings usada na indexação transforma a pergunta em vetor compatível</div>
+        </div>
+        <div class="rag-badge">🧮 Embedding</div>
+      </div>
+      <div class="rag-row">
+        <div class="rag-num">3</div>
+        <div class="rag-content">
+          <div class="rag-title">Busca Semântica no Chroma DB</div>
+          <div class="rag-desc">Sistema encontra os 4 trechos mais similares do material da Profa. Adrize, com score de relevância</div>
+        </div>
+        <div class="rag-badge">🔍 Retrieval</div>
+      </div>
+      <div class="rag-row">
+        <div class="rag-num">4</div>
+        <div class="rag-content">
+          <div class="rag-title">IA Gemini Gera Resposta Didática</div>
+          <div class="rag-desc">
+            Recebe: <em>pergunta + contexto clínico + trechos recuperados</em> → gera resposta baseada no material
+            da aula, explicando termos, citando fontes e adaptando ao perfil do estudante
+          </div>
+        </div>
+        <div class="rag-badge">✨ Generation</div>
+      </div>
+      <div class="rag-row">
+        <div class="rag-num">5</div>
+        <div class="rag-content">
+          <div class="rag-title">Estudante recebe resposta + pode ouvir 🔊 e salvar 💾</div>
+          <div class="rag-desc">
+            Text-to-speech em pt-BR com velocidade ajustável. Download .txt com a resposta completa e fontes.
+            Geração de prompt de imagem para ilustrar o conceito em outra IA.
+          </div>
+        </div>
+        <div class="rag-badge">📲 Output</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SEÇÃO 6: DIFERENÇA COM/SEM RAG -->
+  <div class="section-title">06 — Com RAG vs. Sem RAG</div>
+  <div class="card">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+      <div style="border-radius:12px; border:1px solid #ef444444; background:#fff1f2; padding:16px;">
+        <p style="font-size:13px; font-weight:700; color:#b91c1c; margin-bottom:10px;">❌ Sem RAG (IA genérica)</p>
+        <p style="font-size:13px; color:#475569; line-height:1.7;">
+          "Uma ferida crônica é aquela que não cicatriza em tempo esperado..."<br>
+          <span style="color:#b91c1c; font-size:12px;">⚠ Resposta vaga, sem critério específico, pode citar referência errada ou inventada</span>
+        </p>
+      </div>
+      <div style="border-radius:12px; border:1px solid #0ea5e944; background:#e0f2fe; padding:16px;">
+        <p style="font-size:13px; font-weight:700; color:#0369a1; margin-bottom:10px;">✅ Com RAG (material da aula)</p>
+        <p style="font-size:13px; color:#1e3a5f; line-height:1.7;">
+          "Segundo o consenso de Eriksson et al. (2022), uma ferida é considerada crônica quando o tratamento padrão
+          foi aplicado por 4 semanas sem progressão de 50% na redução da área..."<br>
+          <span style="color:#0369a1; font-size:12px;">✓ Fundamentada no artigo indexado, com critério preciso e fonte citada</span>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- NOTA FINAL -->
+  <div class="footer-note">
+    <strong>✅ Como funciona na prática:</strong> Cada PDF e DOCX da pasta do Google Drive
+    (artigos, material didático da Profa. Adrize, protocolos sobre plantas medicinais) foi fragmentado
+    em trechos, transformado em vetor pelo modelo <strong>Gemini embedding-001</strong> e armazenado no
+    <strong>Chroma DB</strong>. Ao fazer uma pergunta, o sistema localiza os trechos mais relevantes por
+    similaridade de cosseno e os entrega ao modelo <strong>Gemini</strong> para gerar uma resposta
+    didática, fundamentada e com as fontes identificadas.<br><br>
+    <strong>🔧 Modelos utilizados neste sistema:</strong>
+    Embeddings → <code>models/gemini-embedding-001</code> &nbsp;|&nbsp;
+    Geração → <code>gemini-2.0-flash</code> &nbsp;|&nbsp;
+    Vector Store → <code>Chroma DB</code><br><br>
+    Sistema desenvolvido no contexto do Projeto
+    <a href="https://wp.ufpel.edu.br/fen/" target="_blank">PET UFPel Saúde Digital — Telemonitoramento de Feridas Crônicas</a>,
+    coordenado pela Profa. <strong>Adrize Rutz Porto</strong> — FEn/UFPel.
+  </div>
+
+</div>
+</body>
+</html>
