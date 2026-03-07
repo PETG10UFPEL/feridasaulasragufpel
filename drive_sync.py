@@ -1,16 +1,23 @@
 import os
+import io
 import streamlit as st
 from pathlib import Path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
 from dotenv import load_dotenv
 
-# Carrega variáveis de ambiente para uso local
 load_dotenv()
 
-SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
+# ← MUDANÇA: adicionado drive.file para poder criar/atualizar arquivos no Drive
+SCOPES = [
+    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/drive.file",
+]
 FOLDER_MIME = "application/vnd.google-apps.folder"
+
+# Nome da pasta onde o índice Chroma será salvo no Drive
+INDEX_FOLDER_NAME = "_chroma_index"
 
 
 def get_drive_service():
@@ -76,9 +83,7 @@ def _download_file(service, file_id: str, dest: Path):
 
 
 def _sync_folder_recursive(service, folder_id: str, out_root: Path, rel: Path = Path(".")) -> list[Path]:
-    """
-    Sincroniza recursivamente: percorre subpastas e baixa arquivos preservando a estrutura.
-    """
+    """Sincroniza recursivamente: percorre subpastas e baixa arquivos preservando a estrutura."""
     downloaded: list[Path] = []
     items = _list_children(service, folder_id)
 
@@ -87,18 +92,15 @@ def _sync_folder_recursive(service, folder_id: str, out_root: Path, rel: Path = 
         mime = it.get("mimeType", "")
         it_id = it["id"]
 
-        # Subpasta
         if mime == FOLDER_MIME:
             downloaded.extend(_sync_folder_recursive(service, it_id, out_root, rel / name))
             continue
 
-        # Ignora ficheiros nativos do Google (Docs, Sheets, Slides) que exigem exportação
         if mime.startswith("application/vnd.google-apps"):
             continue
 
         dest = out_root / rel / name
 
-        # Só descarrega se o ficheiro não existir localmente (otimização)
         if not dest.exists():
             _download_file(service, it_id, dest)
             downloaded.append(dest)
@@ -109,9 +111,6 @@ def _sync_folder_recursive(service, folder_id: str, out_root: Path, rel: Path = 
 def sync_folder(folder_id: str, out_dir: str, recursive: bool = True) -> list[Path]:
     """
     Sincroniza uma pasta do Google Drive com um diretório local.
-
-    - Se recursive=True (padrão): baixa também as subpastas e preserva a estrutura.
-    - Se recursive=False: baixa apenas o que estiver no "raiz" da pasta.
     """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -145,8 +144,169 @@ def sync_folder(folder_id: str, out_dir: str, recursive: bool = True) -> list[Pa
         return []
 
 
+# ==============================
+# FUNÇÕES DE PERSISTÊNCIA DO ÍNDICE
+# ==============================
+
+def _get_or_create_index_folder(service, parent_folder_id: str) -> str:
+    """
+    Retorna o ID da pasta '_chroma_index' dentro de parent_folder_id.
+    Cria a pasta se não existir.
+    """
+    q = (
+        f"'{parent_folder_id}' in parents "
+        f"and name = '{INDEX_FOLDER_NAME}' "
+        f"and mimeType = 'application/vnd.google-apps.folder' "
+        f"and trashed = false"
+    )
+    resp = service.files().list(q=q, fields="files(id, name)").execute()
+    files = resp.get("files", [])
+
+    if files:
+        return files[0]["id"]
+
+    # Cria a pasta
+    folder_meta = {
+        "name": INDEX_FOLDER_NAME,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent_folder_id],
+    }
+    folder = service.files().create(body=folder_meta, fields="id").execute()
+    print(f"[Drive] Pasta '{INDEX_FOLDER_NAME}' criada no Drive.")
+    return folder["id"]
+
+
+def upload_index_to_drive(db_dir: str, gdrive_folder_id: str) -> bool:
+    """
+    Faz upload de todos os arquivos do diretório db_dir
+    para a pasta '_chroma_index' no Google Drive.
+
+    Arquivos existentes são substituídos (update); novos são criados.
+    Retorna True em caso de sucesso.
+    """
+    db_path = Path(db_dir)
+    if not db_path.exists():
+        print(f"[ERRO] Pasta do índice não existe: {db_path}")
+        return False
+
+    files_to_upload = list(db_path.rglob("*"))
+    files_to_upload = [f for f in files_to_upload if f.is_file()]
+
+    if not files_to_upload:
+        print("[AVISO] Nenhum arquivo encontrado para upload.")
+        return False
+
+    try:
+        service = get_drive_service()
+        index_folder_id = _get_or_create_index_folder(service, gdrive_folder_id)
+
+        # Lista arquivos já existentes na pasta de índice (para update vs create)
+        existing = {
+            f["name"]: f["id"]
+            for f in _list_children(service, index_folder_id)
+            if f.get("mimeType") != FOLDER_MIME
+        }
+
+        uploaded = 0
+        for file_path in files_to_upload:
+            name = file_path.name
+            media = MediaFileUpload(str(file_path), resumable=False)
+
+            if name in existing:
+                # Atualiza arquivo existente
+                service.files().update(
+                    fileId=existing[name],
+                    media_body=media,
+                ).execute()
+            else:
+                # Cria novo arquivo
+                file_meta = {"name": name, "parents": [index_folder_id]}
+                service.files().create(
+                    body=file_meta,
+                    media_body=media,
+                    fields="id",
+                ).execute()
+
+            uploaded += 1
+
+        print(f"[Drive] Índice salvo: {uploaded} arquivo(s) em '{INDEX_FOLDER_NAME}'.")
+        return True
+
+    except Exception as e:
+        print(f"[ERRO] Falha ao salvar índice no Drive: {e}")
+        return False
+
+
+def download_index_from_drive(db_dir: str, gdrive_folder_id: str) -> bool:
+    """
+    Baixa todos os arquivos da pasta '_chroma_index' do Drive para db_dir.
+
+    Retorna True se o índice existia e foi baixado com sucesso.
+    Retorna False se a pasta de índice não existir no Drive.
+    """
+    try:
+        service = get_drive_service()
+
+        # Verifica se a pasta de índice existe
+        q = (
+            f"'{gdrive_folder_id}' in parents "
+            f"and name = '{INDEX_FOLDER_NAME}' "
+            f"and mimeType = 'application/vnd.google-apps.folder' "
+            f"and trashed = false"
+        )
+        resp = service.files().list(q=q, fields="files(id, name)").execute()
+        folders = resp.get("files", [])
+
+        if not folders:
+            print("[Drive] Pasta de índice '_chroma_index' não encontrada no Drive.")
+            return False
+
+        index_folder_id = folders[0]["id"]
+        items = _list_children(service, index_folder_id)
+
+        if not items:
+            print("[Drive] Pasta '_chroma_index' está vazia no Drive.")
+            return False
+
+        db_path = Path(db_dir)
+        db_path.mkdir(parents=True, exist_ok=True)
+
+        for item in items:
+            if item.get("mimeType") == FOLDER_MIME:
+                continue
+            dest = db_path / item["name"]
+            _download_file(service, item["id"], dest)
+
+        print(f"[Drive] Índice baixado: {len(items)} arquivo(s) para '{db_path}'.")
+        return True
+
+    except Exception as e:
+        print(f"[ERRO] Falha ao baixar índice do Drive: {e}")
+        return False
+
+
+def index_exists_on_drive(gdrive_folder_id: str) -> bool:
+    """
+    Verifica rapidamente se o índice já existe no Drive (sem baixar).
+    """
+    try:
+        service = get_drive_service()
+        q = (
+            f"'{gdrive_folder_id}' in parents "
+            f"and name = '{INDEX_FOLDER_NAME}' "
+            f"and mimeType = 'application/vnd.google-apps.folder' "
+            f"and trashed = false"
+        )
+        resp = service.files().list(q=q, fields="files(id)").execute()
+        folders = resp.get("files", [])
+        if not folders:
+            return False
+        # Verifica se tem arquivos dentro
+        items = _list_children(service, folders[0]["id"])
+        return len(items) > 0
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
-    # Exemplo de uso:
-    # ID_PASTA = "seu_id_aqui"
-    # sync_folder(ID_PASTA, "data/raw_docs", recursive=True)
     pass

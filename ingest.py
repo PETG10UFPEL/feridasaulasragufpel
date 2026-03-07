@@ -8,7 +8,6 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Loaders (tentamos os mais comuns; se não existir, a gente pula com aviso)
 from langchain_community.document_loaders import TextLoader
 
 try:
@@ -21,7 +20,6 @@ try:
 except Exception:
     UnstructuredWordDocumentLoader = None  # type: ignore
 
-# Streamlit é opcional (ingest deve rodar no terminal sem UI)
 try:
     import streamlit as st  # type: ignore
 except Exception:
@@ -32,7 +30,6 @@ load_dotenv()
 
 
 def _get_api_key() -> Optional[str]:
-    """Pega chave do Streamlit secrets (se disponível) ou do .env / variáveis de ambiente."""
     api_key = None
     if st is not None:
         try:
@@ -47,7 +44,6 @@ def _get_api_key() -> Optional[str]:
 
 
 def _load_docs_recursive(raw_dir: str) -> List:
-    """Carrega documentos recursivamente em raw_dir (subpastas inclusas)."""
     base = Path(raw_dir)
     if not base.exists():
         print(f"[ERRO] Pasta não existe: {base.resolve()}")
@@ -70,7 +66,6 @@ def _load_docs_recursive(raw_dir: str) -> List:
                 docs.extend(PyPDFLoader(str(p)).load())
 
             elif ext in (".txt", ".md"):
-                # encoding latin-1 às vezes salva a pele em material antigo
                 try:
                     docs.extend(TextLoader(str(p), encoding="utf-8").load())
                 except UnicodeDecodeError:
@@ -83,7 +78,6 @@ def _load_docs_recursive(raw_dir: str) -> List:
                 docs.extend(UnstructuredWordDocumentLoader(str(p)).load())
 
             else:
-                # ignora o resto (imagens, etc.)
                 continue
 
         except Exception as e:
@@ -97,12 +91,13 @@ def build_index(
     db_dir: str = "data/chroma_db",
     batch_size: int = 50,
     batch_delay: float = 12.0,
+    gdrive_folder_id: str = "",   # ← NOVO: se informado, salva índice no Drive após indexar
 ) -> int:
     """
     Indexa documentos em lotes para evitar erro 429 (cota da API).
 
-    batch_size  — chunks por lote enviado à API (padrão: 50)
-    batch_delay — segundos de pausa entre lotes (padrão: 12s)
+    gdrive_folder_id — se informado, faz upload do índice ao Drive após criar
+                       (permite que o Streamlit recupere o índice após dormir)
     """
     api_key = _get_api_key()
     if not api_key:
@@ -123,7 +118,7 @@ def build_index(
     chunks = splitter.split_documents(docs)
 
     if not chunks:
-        print("[FIM] Documentos carregados, mas 0 chunks gerados. (Checa loaders/conteúdo)")
+        print("[FIM] Documentos carregados, mas 0 chunks gerados.")
         return 0
 
     embeddings = GoogleGenerativeAIEmbeddings(
@@ -140,7 +135,6 @@ def build_index(
         print(f"[LOTE {i + 1}/{total_batches}] {len(batch)} chunks...")
 
         if vectordb is None:
-            # Primeiro lote: cria o vectorstore
             vectordb = Chroma.from_documents(
                 documents=batch,
                 embedding=embeddings,
@@ -148,21 +142,32 @@ def build_index(
                 collection_name="feridas_cronicas",
             )
         else:
-            # Lotes seguintes: adiciona ao vectorstore existente
             vectordb.add_documents(batch)
 
-        # Pausa entre lotes (exceto após o último)
         if start + batch_size < len(chunks):
             print(f"  Aguardando {batch_delay}s para respeitar limite da API...")
             time.sleep(batch_delay)
 
-    # versões novas persistem automaticamente; manter compatibilidade:
     try:
         vectordb.persist()
     except Exception:
         pass
 
     print(f"[OK] Index criado: {len(chunks)} chunks em {total_batches} lote(s) — {Path(db_dir).resolve()}")
+
+    # ── NOVO: salva índice no Drive para sobreviver ao sleep do Streamlit ──
+    if gdrive_folder_id:
+        print("[Drive] Salvando índice no Google Drive...")
+        try:
+            from drive_sync import upload_index_to_drive
+            ok = upload_index_to_drive(db_dir, gdrive_folder_id)
+            if ok:
+                print("[Drive] Índice salvo com sucesso no Drive.")
+            else:
+                print("[Drive] Falha ao salvar índice no Drive (verifique logs acima).")
+        except Exception as e:
+            print(f"[Drive] Erro ao salvar índice: {e}")
+
     return len(chunks)
 
 

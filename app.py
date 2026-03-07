@@ -65,7 +65,7 @@ try:
 except Exception:
     pass
 
-from drive_sync import sync_folder
+from drive_sync import sync_folder, download_index_from_drive, upload_index_to_drive, index_exists_on_drive
 from ingest import build_index
 
 
@@ -253,6 +253,36 @@ def get_llm():
     return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.2)
 
 
+# ==============================
+# Auto-restauração do índice após sleep do Streamlit
+# Roda uma única vez por sessão (cache_resource garante isso).
+# Se o chroma_db local estiver vazio/ausente, tenta baixar do Drive.
+# ==============================
+@st.cache_resource(show_spinner=False)
+def _auto_restore_index() -> str:
+    """
+    Verifica se o índice Chroma existe localmente.
+    Se não existir, tenta baixar do Drive automaticamente.
+    Retorna status: 'local' | 'restored' | 'not_found' | 'no_folder_id'
+    """
+    db_path = Path(DB_DIR)
+    already_local = db_path.exists() and any(db_path.iterdir())
+
+    if already_local:
+        return "local"
+
+    folder_id = os.getenv("GDRIVE_FOLDER_ID", "")
+    if not folder_id:
+        return "no_folder_id"
+
+    print("[Init] Índice local não encontrado. Tentando restaurar do Drive...")
+    ok = download_index_from_drive(DB_DIR, folder_id)
+    return "restored" if ok else "not_found"
+
+
+_restore_status = _auto_restore_index()
+
+
 def answer_local(q: str, patient: str, k: int = 4):
     """RAG simples: recupera k trechos no Chroma e gera resposta com Gemini."""
     db = get_db()
@@ -430,6 +460,14 @@ with st.sidebar:
     admin_pass = st.text_input("Senha admin", type="password")
     is_admin = admin_pass == st.secrets.get("ADMIN_PASSWORD", "")
 
+    # ── Status da restauração automática do índice ──
+    if _restore_status == "restored":
+        st.success("✅ Índice restaurado automaticamente do Drive.")
+    elif _restore_status == "not_found":
+        st.warning("⚠️ Nenhum índice no Drive. Use os botões abaixo para criar.")
+    elif _restore_status == "local":
+        st.info("📦 Índice carregado do disco local.")
+
     if is_admin:
         folder_id = os.getenv("GDRIVE_FOLDER_ID", "")
         st.text_input("Folder ID", value=folder_id, key="folder_id")
@@ -443,10 +481,15 @@ with st.sidebar:
                 st.info("Nenhum arquivo novo baixado (já sincronizados ou pasta vazia).")
 
         if st.button("2) Recriar índice (embeddings)"):
-            with st.spinner("Indexando..."):
-                n = build_index("data/raw_docs", "data/chroma_db")
-            st.cache_data.clear()  # invalida respostas em cache após novo índice
-            st.success(f"Índice criado com {n} trechos. Cache de respostas limpo automaticamente.")
+            with st.spinner("Indexando e salvando no Drive..."):
+                n = build_index(
+                    "data/raw_docs",
+                    "data/chroma_db",
+                    gdrive_folder_id=st.session_state.folder_id,  # ← salva no Drive automaticamente
+                )
+            st.cache_data.clear()
+            st.cache_resource.clear()  # força recarregar DB e status de restauração
+            st.success(f"✅ Índice criado com {n} trechos e salvo no Drive.")
     else:
         if admin_pass:
             st.error("Senha incorreta")
