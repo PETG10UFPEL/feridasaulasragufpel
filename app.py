@@ -232,25 +232,12 @@ def gerar_prompt_imagem(pergunta: str, resposta: str) -> str:
 # ==============================
 @st.cache_resource(show_spinner=False)
 def get_embeddings():
+    # CORREÇÃO: task_type="retrieval_query" é o correto para buscas/consultas.
+    # "retrieval_document" é usado apenas na indexação (ingest.py).
     return GoogleGenerativeAIEmbeddings(
         model="models/gemini-embedding-001",
-        task_type="retrieval_document",
+        task_type="retrieval_query",
     )
-
-
-@st.cache_resource(show_spinner=False)
-def get_db():
-    return Chroma(
-        persist_directory=DB_DIR,
-        embedding_function=get_embeddings(),
-        collection_name=COLLECTION,
-    )
-
-
-@st.cache_resource(show_spinner=False)
-def get_llm():
-    # Temperatura baixa: resposta mais estável/"pé no chão"
-    return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.2)
 
 
 # ==============================
@@ -278,6 +265,25 @@ def _auto_restore_index() -> str:
     print("[Init] Índice local não encontrado. Tentando restaurar do Drive...")
     ok = download_index_from_drive(DB_DIR, folder_id)
     return "restored" if ok else "not_found"
+
+
+@st.cache_resource(show_spinner=False)
+def get_db():
+    # CORREÇÃO: chama _auto_restore_index() internamente para garantir que
+    # o download do Drive sempre precede a leitura do disco, independente
+    # da ordem de execução dos cache_resource entre si.
+    _auto_restore_index()
+    return Chroma(
+        persist_directory=DB_DIR,
+        embedding_function=get_embeddings(),
+        collection_name=COLLECTION,
+    )
+
+
+@st.cache_resource(show_spinner=False)
+def get_llm():
+    # Temperatura baixa: resposta mais estável/"pé no chão"
+    return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.2)
 
 
 _restore_status = _auto_restore_index()
@@ -488,7 +494,11 @@ with st.sidebar:
                     gdrive_folder_id=st.session_state.folder_id,  # ← salva no Drive automaticamente
                 )
             st.cache_data.clear()
-            st.cache_resource.clear()  # força recarregar DB e status de restauração
+            # CORREÇÃO: limpa apenas o cache do DB, preservando _auto_restore_index
+            # para não redownlodar do Drive desnecessariamente.
+            get_db.clear()
+            get_embeddings.clear()
+            get_llm.clear()
             st.success(f"✅ Índice criado com {n} trechos e salvo no Drive.")
     else:
         if admin_pass:
