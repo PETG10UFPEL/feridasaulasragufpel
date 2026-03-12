@@ -261,17 +261,20 @@ with st.sidebar:
             st.success(f"Baixados {len(files)} arquivos para data/raw_docs")
 
         if st.button("2) Recriar índice (embeddings)"):
-            with st.spinner("Indexando e salvando no Drive..."):
-                n, vectordb = build_index(
-                    "data/raw_docs",
-                    DB_DIR,
-                    gdrive_folder_id=st.session_state.folder_id,
-                )
+            # Garante folder_id mesmo se o campo estiver vazio na tela
+            _fid = st.session_state.get("folder_id", "").strip() or os.getenv("GDRIVE_FOLDER_ID", "")
+            if not _fid:
+                st.error("GDRIVE_FOLDER_ID não encontrado. Verifique os secrets.")
+            else:
+                with st.spinner("Indexando e salvando no Drive..."):
+                    n, vectordb = build_index(
+                        "data/raw_docs",
+                        DB_DIR,
+                        gdrive_folder_id=_fid,
+                    )
                 if vectordb is not None:
-                    # CORREÇÃO: limpa apenas o cache do vectordb,
-                    # não o da restauração automática (_auto_restore_index).
                     load_vectordb_from_disk.clear()
-                    st.success(f"✅ Índice criado com {n} trechos e salvo no Drive.")
+                    st.success(f"✅ Índice criado com {n} trechos e salvo no Drive (folder: {_fid[:8]}...).")
                 else:
                     st.error("Nenhum documento encontrado em data/raw_docs. Sincronize primeiro.")
 
