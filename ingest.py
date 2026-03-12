@@ -1,47 +1,50 @@
+# ingest.py
+"""
+Indexador (RAG) para o projeto PET-Saúde G10.
+Usa HuggingFace Embeddings locais (sem API paga, sem cota).
+Modelo multilíngue: suporta PT, EN, ES e +50 línguas.
+"""
+
+from __future__ import annotations
+
 import os
 import ftfy
 from pathlib import Path
-from typing import List
+from typing import List, Tuple, Optional
 
 from dotenv import load_dotenv
+from langchain_core.documents import Document
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import TextLoader
-
-try:
-    from langchain_community.document_loaders import PyPDFLoader
-except Exception:
-    PyPDFLoader = None  # type: ignore
 
 try:
     from langchain_community.document_loaders import UnstructuredWordDocumentLoader
 except Exception:
     UnstructuredWordDocumentLoader = None  # type: ignore
 
-try:
-    import streamlit as st  # type: ignore
-except Exception:
-    st = None  # type: ignore
-
-
 load_dotenv()
 
-# Modelo multilíngue: suporta PT, EN, ES e +50 línguas — roda local, sem API key
+RAW_DIR_DEFAULT = "data/raw_docs"
+DB_DIR_DEFAULT  = "data/chroma_db"
+COLLECTION_NAME = "diet_knowledge"
+
+# Modelo multilíngue — roda local, sem API key, sem limite de cota
 EMBED_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 
 
-def _fix_encoding(docs: List) -> List:
+def _fix_encoding(docs: List[Document]) -> List[Document]:
     """
     Corrige problemas de encoding em textos extraídos de PDFs e DOCX.
-    Usa ftfy para reparar bytes mal interpretados — comum em documentos PT-BR
-    com caracteres como ç, ã, é salvos em latin-1 mas lidos como UTF-8.
+    Usa ftfy para detectar e reparar bytes mal interpretados (ex: ç, ã, é
+    salvos em latin-1 mas lidos como UTF-8, comum em documentos PT-BR).
     """
     for doc in docs:
         try:
             doc.page_content = ftfy.fix_text(doc.page_content)
         except Exception:
-            # Fallback: força re-encode latin-1 → utf-8
+            # Fallback: força re-encode latin-1 → utf-8 se ftfy falhar
             try:
                 doc.page_content = (
                     doc.page_content.encode("latin-1", errors="replace")
@@ -52,83 +55,82 @@ def _fix_encoding(docs: List) -> List:
     return docs
 
 
-def _load_docs_recursive(raw_dir: str) -> List:
-    base = Path(raw_dir)
-    if not base.exists():
-        print(f"[ERRO] Pasta não existe: {base.resolve()}")
+def _load_pdf(path: Path) -> List[Document]:
+    try:
+        docs = PyPDFLoader(str(path)).load()
+        return _fix_encoding(docs)
+    except Exception as e:
+        print(f"[AVISO] Erro ao carregar PDF {path}: {e}")
         return []
 
-    files = [p for p in base.rglob("*") if p.is_file()]
-    if not files:
-        print(f"[ERRO] 0 arquivos encontrados em: {base.resolve()} (incluindo subpastas).")
+
+def _load_docx(path: Path) -> List[Document]:
+    if UnstructuredWordDocumentLoader is None:
+        print(f"[AVISO] Pulando DOCX (loader indisponível): {path}")
+        return []
+    try:
+        docs = UnstructuredWordDocumentLoader(str(path)).load()
+        return _fix_encoding(docs)
+    except Exception as e:
+        print(f"[AVISO] Erro ao carregar DOCX {path}: {e}")
         return []
 
-    docs = []
-    for p in files:
-        ext = p.suffix.lower()
+
+def load_file(path: Path) -> List[Document]:
+    suf = path.suffix.lower()
+    if suf == ".pdf":
+        return _load_pdf(path)
+    if suf == ".docx":
+        return _load_docx(path)
+    return []
+
+
+def load_all_docs(raw_dir: str) -> Tuple[List[Document], List[str]]:
+    raw = Path(raw_dir)
+    raw.mkdir(parents=True, exist_ok=True)
+    docs: List[Document] = []
+    skipped: List[str] = []
+    for p in raw.rglob("*"):
+        if not p.is_file():
+            continue
+        if p.suffix.lower() not in [".pdf", ".docx"]:
+            skipped.append(str(p))
+            continue
         try:
-            if ext == ".pdf":
-                if PyPDFLoader is None:
-                    print(f"[AVISO] Pulando PDF (PyPDFLoader indisponível): {p}")
-                    continue
-                loaded = PyPDFLoader(str(p)).load()
-                docs.extend(_fix_encoding(loaded))
-
-            elif ext in (".txt", ".md"):
-                try:
-                    loaded = TextLoader(str(p), encoding="utf-8").load()
-                except UnicodeDecodeError:
-                    loaded = TextLoader(str(p), encoding="latin-1").load()
-                docs.extend(_fix_encoding(loaded))
-
-            elif ext == ".docx":
-                if UnstructuredWordDocumentLoader is None:
-                    print(f"[AVISO] Pulando DOCX (loader indisponível): {p}")
-                    continue
-                loaded = UnstructuredWordDocumentLoader(str(p)).load()
-                docs.extend(_fix_encoding(loaded))
-
-            else:
-                continue
-
+            docs.extend(load_file(p))
         except Exception as e:
-            print(f"[AVISO] Falha ao carregar {p}: {e}")
-
-    return docs
+            skipped.append(f"{p} (erro: {e})")
+    return docs, skipped
 
 
 def build_index(
-    raw_dir: str = "data/raw_docs",
-    db_dir: str = "data/chroma_db",
+    raw_dir: str = RAW_DIR_DEFAULT,
+    db_dir: str = DB_DIR_DEFAULT,
+    chunk_size: int = 900,
+    chunk_overlap: int = 150,
     gdrive_folder_id: str = "",
-) -> int:
+) -> Tuple[int, Optional[Chroma]]:
     """
-    Indexa documentos localmente com HuggingFace (sem API paga, sem cota).
+    Indexa os documentos localmente com HuggingFace (sem API paga, sem cota).
     Suporta documentos em português, inglês e outras línguas simultaneamente.
     Corrige automaticamente problemas de encoding em documentos PT-BR.
 
     gdrive_folder_id — se informado, faz upload do índice ao Drive após criar,
-                       permitindo que o Streamlit recupere o índice após dormir.
+                       permitindo recuperar após sleep do Streamlit.
     """
-    print("Indexando a partir de:", Path(raw_dir).resolve())
-    docs = _load_docs_recursive(raw_dir)
-
+    docs, skipped = load_all_docs(raw_dir)
     if not docs:
-        print("[FIM] Nada para indexar (nenhum documento carregado).")
-        return 0
+        print(f"AVISO: Nenhum documento válido encontrado em '{raw_dir}'")
+        return 0, None
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=150,
-        separators=["\n\n", "\n", " ", ""],
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        separators=["\n\n", "\n", ". ", " ", ""],
     )
     chunks = splitter.split_documents(docs)
 
-    if not chunks:
-        print("[FIM] Documentos carregados, mas 0 chunks gerados.")
-        return 0
-
-    # Embeddings locais — multilíngue, sem API key, sem limite de cota
+    # Embeddings locais — sem API key, sem limite de cota
     embeddings = HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
         model_kwargs={"device": "cpu"},
@@ -141,15 +143,19 @@ def build_index(
         documents=chunks,
         embedding=embeddings,
         persist_directory=db_dir,
-        collection_name="feridas_cronicas",
+        collection_name=COLLECTION_NAME,
     )
 
+    # Compatibilidade com versões antigas do Chroma
     try:
         vectordb.persist()
     except Exception:
         pass
 
-    print(f"[OK] Índice criado: {len(chunks)} chunks — {Path(db_dir).resolve()}")
+    if skipped:
+        print(f"Arquivos ignorados/erro: {len(skipped)}")
+
+    print(f"Sucesso! {len(chunks)} trechos indexados.")
 
     # Salva índice no Drive para sobreviver ao sleep do Streamlit
     if gdrive_folder_id:
@@ -158,14 +164,15 @@ def build_index(
             from drive_sync import upload_index_to_drive
             ok = upload_index_to_drive(db_dir, gdrive_folder_id)
             if ok:
-                print("[Drive] Índice salvo com sucesso no Drive.")
+                print("[Drive] Índice salvo com sucesso.")
             else:
-                print("[Drive] Falha ao salvar índice no Drive (verifique logs acima).")
+                print("[Drive] Falha ao salvar índice (verifique permissões).")
         except Exception as e:
             print(f"[Drive] Erro ao salvar índice: {e}")
 
-    return len(chunks)
+    return len(chunks), vectordb
 
 
 if __name__ == "__main__":
-    build_index()
+    n, _ = build_index()
+    print(f"{n} trechos indexados.")
