@@ -45,21 +45,19 @@ def copy_button(label: str, text: str, key: str):
     components.html(html, height=52)
 
 # ==============================
-# RAG core (Chroma + Gemini)
+# RAG core (Chroma + Groq + HuggingFace Embeddings)
 # ==============================
 from langchain_community.vectorstores import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_groq import ChatGroq
 
 DB_DIR = os.getenv("CHROMA_DB_DIR", "data/chroma_db")
 COLLECTION = os.getenv("CHROMA_COLLECTION", "feridas_cronicas")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Streamlit Cloud: carrega secrets se disponíveis
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        os.environ["GOOGLE_API_KEY"] = st.secrets["GOOGLE_API_KEY"]
-    if "GEMINI_MODEL" in st.secrets:
-        os.environ["GEMINI_MODEL"] = st.secrets["GEMINI_MODEL"]
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
     if "GDRIVE_FOLDER_ID" in st.secrets:
         os.environ["GDRIVE_FOLDER_ID"] = st.secrets["GDRIVE_FOLDER_ID"]
 except Exception:
@@ -232,11 +230,11 @@ def gerar_prompt_imagem(pergunta: str, resposta: str) -> str:
 # ==============================
 @st.cache_resource(show_spinner=False)
 def get_embeddings():
-    # CORREÇÃO: task_type="retrieval_query" é o correto para buscas/consultas.
-    # "retrieval_document" é usado apenas na indexação (ingest.py).
-    return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        task_type="retrieval_query",
+    # Embeddings locais — multilíngue PT/EN/ES e +50 línguas, sem API key
+    return HuggingFaceEmbeddings(
+        model_name="paraphrase-multilingual-mpnet-base-v2",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
     )
 
 
@@ -282,15 +280,21 @@ def get_db():
 
 @st.cache_resource(show_spinner=False)
 def get_llm():
-    # Temperatura baixa: resposta mais estável/"pé no chão"
-    return ChatGoogleGenerativeAI(model=GEMINI_MODEL, temperature=0.2)
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key:
+        raise RuntimeError("Sem GROQ_API_KEY. Configure em .streamlit/secrets.toml.")
+    return ChatGroq(
+        model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        groq_api_key=groq_key,
+        temperature=0.2,
+    )
 
 
 _restore_status = _auto_restore_index()
 
 
 def answer_local(q: str, patient: str, k: int = 4):
-    """RAG simples: recupera k trechos no Chroma e gera resposta com Gemini."""
+    """RAG simples: recupera k trechos no Chroma e gera resposta com Groq."""
     db = get_db()
     try:
         n = db._collection.count()  # type: ignore[attr-defined]

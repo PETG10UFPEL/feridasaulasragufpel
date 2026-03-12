@@ -1,13 +1,12 @@
 import os
-import time
+import ftfy
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 
 from dotenv import load_dotenv
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
 from langchain_community.document_loaders import TextLoader
 
 try:
@@ -28,19 +27,29 @@ except Exception:
 
 load_dotenv()
 
+# Modelo multilíngue: suporta PT, EN, ES e +50 línguas — roda local, sem API key
+EMBED_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 
-def _get_api_key() -> Optional[str]:
-    api_key = None
-    if st is not None:
+
+def _fix_encoding(docs: List) -> List:
+    """
+    Corrige problemas de encoding em textos extraídos de PDFs e DOCX.
+    Usa ftfy para reparar bytes mal interpretados — comum em documentos PT-BR
+    com caracteres como ç, ã, é salvos em latin-1 mas lidos como UTF-8.
+    """
+    for doc in docs:
         try:
-            if "GOOGLE_API_KEY" in st.secrets:
-                api_key = st.secrets["GOOGLE_API_KEY"]
+            doc.page_content = ftfy.fix_text(doc.page_content)
         except Exception:
-            pass
-
-    if not api_key:
-        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    return api_key
+            # Fallback: força re-encode latin-1 → utf-8
+            try:
+                doc.page_content = (
+                    doc.page_content.encode("latin-1", errors="replace")
+                    .decode("utf-8", errors="replace")
+                )
+            except Exception:
+                pass
+    return docs
 
 
 def _load_docs_recursive(raw_dir: str) -> List:
@@ -57,25 +66,27 @@ def _load_docs_recursive(raw_dir: str) -> List:
     docs = []
     for p in files:
         ext = p.suffix.lower()
-
         try:
             if ext == ".pdf":
                 if PyPDFLoader is None:
                     print(f"[AVISO] Pulando PDF (PyPDFLoader indisponível): {p}")
                     continue
-                docs.extend(PyPDFLoader(str(p)).load())
+                loaded = PyPDFLoader(str(p)).load()
+                docs.extend(_fix_encoding(loaded))
 
             elif ext in (".txt", ".md"):
                 try:
-                    docs.extend(TextLoader(str(p), encoding="utf-8").load())
+                    loaded = TextLoader(str(p), encoding="utf-8").load()
                 except UnicodeDecodeError:
-                    docs.extend(TextLoader(str(p), encoding="latin-1").load())
+                    loaded = TextLoader(str(p), encoding="latin-1").load()
+                docs.extend(_fix_encoding(loaded))
 
             elif ext == ".docx":
                 if UnstructuredWordDocumentLoader is None:
                     print(f"[AVISO] Pulando DOCX (loader indisponível): {p}")
                     continue
-                docs.extend(UnstructuredWordDocumentLoader(str(p)).load())
+                loaded = UnstructuredWordDocumentLoader(str(p)).load()
+                docs.extend(_fix_encoding(loaded))
 
             else:
                 continue
@@ -89,20 +100,16 @@ def _load_docs_recursive(raw_dir: str) -> List:
 def build_index(
     raw_dir: str = "data/raw_docs",
     db_dir: str = "data/chroma_db",
-    batch_size: int = 50,
-    batch_delay: float = 12.0,
-    gdrive_folder_id: str = "",   # ← NOVO: se informado, salva índice no Drive após indexar
+    gdrive_folder_id: str = "",
 ) -> int:
     """
-    Indexa documentos em lotes para evitar erro 429 (cota da API).
+    Indexa documentos localmente com HuggingFace (sem API paga, sem cota).
+    Suporta documentos em português, inglês e outras línguas simultaneamente.
+    Corrige automaticamente problemas de encoding em documentos PT-BR.
 
-    gdrive_folder_id — se informado, faz upload do índice ao Drive após criar
-                       (permite que o Streamlit recupere o índice após dormir)
+    gdrive_folder_id — se informado, faz upload do índice ao Drive após criar,
+                       permitindo que o Streamlit recupere o índice após dormir.
     """
-    api_key = _get_api_key()
-    if not api_key:
-        raise RuntimeError("Sem GOOGLE_API_KEY/GEMINI_API_KEY. Defina no .env ou variáveis de ambiente.")
-
     print("Indexando a partir de:", Path(raw_dir).resolve())
     docs = _load_docs_recursive(raw_dir)
 
@@ -121,41 +128,30 @@ def build_index(
         print("[FIM] Documentos carregados, mas 0 chunks gerados.")
         return 0
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=api_key,
-        task_type="retrieval_document",
+    # Embeddings locais — multilíngue, sem API key, sem limite de cota
+    embeddings = HuggingFaceEmbeddings(
+        model_name=EMBED_MODEL,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
     )
 
-    total_batches = (len(chunks) + batch_size - 1) // batch_size
-    vectordb = None
+    print(f"[OK] Gerando embeddings para {len(chunks)} chunks (modelo local)...")
 
-    for i, start in enumerate(range(0, len(chunks), batch_size)):
-        batch = chunks[start : start + batch_size]
-        print(f"[LOTE {i + 1}/{total_batches}] {len(batch)} chunks...")
-
-        if vectordb is None:
-            vectordb = Chroma.from_documents(
-                documents=batch,
-                embedding=embeddings,
-                persist_directory=db_dir,
-                collection_name="feridas_cronicas",
-            )
-        else:
-            vectordb.add_documents(batch)
-
-        if start + batch_size < len(chunks):
-            print(f"  Aguardando {batch_delay}s para respeitar limite da API...")
-            time.sleep(batch_delay)
+    vectordb = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        persist_directory=db_dir,
+        collection_name="feridas_cronicas",
+    )
 
     try:
         vectordb.persist()
     except Exception:
         pass
 
-    print(f"[OK] Index criado: {len(chunks)} chunks em {total_batches} lote(s) — {Path(db_dir).resolve()}")
+    print(f"[OK] Índice criado: {len(chunks)} chunks — {Path(db_dir).resolve()}")
 
-    # ── NOVO: salva índice no Drive para sobreviver ao sleep do Streamlit ──
+    # Salva índice no Drive para sobreviver ao sleep do Streamlit
     if gdrive_folder_id:
         print("[Drive] Salvando índice no Google Drive...")
         try:
