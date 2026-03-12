@@ -21,7 +21,7 @@ from ingest import build_index
 from rag import answer
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_chroma import Chroma
+from langchain_community.vectorstores import Chroma
 
 EMBED_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 
@@ -236,16 +236,15 @@ with st.sidebar:
     st.header("Base de conhecimento (Google Drive)")
 
     # ── Status da restauração automática ──
-    if _restore_status == "restored":
-        st.success("✅ Índice restaurado automaticamente do Drive.")
+    _db_loaded = load_vectordb_from_disk() is not None
+    if _db_loaded or _restore_status in ("restored", "local"):
+        st.success("✅ Índice carregado e pronto.")
     elif _restore_status == "not_found":
         st.error(
             "⚠️ Nenhum índice encontrado no Drive. "
             "Para começar: faça login como admin → "
             "**1) Sincronizar** → **2) Recriar índice**."
         )
-    elif _restore_status == "local":
-        st.info("📦 Índice carregado do disco local.")
     elif _restore_status == "no_folder_id":
         st.error("⚠️ GDRIVE_FOLDER_ID não configurado nos secrets.")
 
