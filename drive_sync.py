@@ -180,59 +180,65 @@ def _get_or_create_index_folder(service, parent_folder_id: str) -> str:
 
 def upload_index_to_drive(db_dir: str, gdrive_folder_id: str) -> bool:
     """
-    Faz upload de todos os arquivos do diretório db_dir
-    para a pasta '_chroma_index' no Google Drive.
-
-    Arquivos existentes são substituídos (update); novos são criados.
+    Compacta o índice Chroma em um único ZIP e faz upload para o Google Drive.
+    Usar um arquivo único evita o erro 403 de cota de Service Accounts.
     Retorna True em caso de sucesso.
     """
+    import zipfile
+    import tempfile
+
     db_path = Path(db_dir)
     if not db_path.exists():
         print(f"[ERRO] Pasta do índice não existe: {db_path}")
         return False
 
-    files_to_upload = list(db_path.rglob("*"))
-    files_to_upload = [f for f in files_to_upload if f.is_file()]
-
+    files_to_upload = [f for f in db_path.rglob("*") if f.is_file()]
     if not files_to_upload:
         print("[AVISO] Nenhum arquivo encontrado para upload.")
         return False
 
     try:
+        # Cria ZIP temporário com todos os arquivos do índice
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            zip_path = Path(tmp.name)
+
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for file_path in files_to_upload:
+                zf.write(file_path, file_path.relative_to(db_path))
+
+        print(f"[Drive] ZIP criado: {zip_path.stat().st_size // 1024} KB")
+
         service = get_drive_service()
-        index_folder_id = _get_or_create_index_folder(service, gdrive_folder_id)
 
-        # Lista arquivos já existentes na pasta de índice (para update vs create)
-        existing = {
-            f["name"]: f["id"]
-            for f in _list_children(service, index_folder_id)
-            if f.get("mimeType") != FOLDER_MIME
-        }
+        # Busca arquivo ZIP existente na pasta pai (não em subpasta)
+        zip_name = "chroma_index.zip"
+        q = (
+            f"'{gdrive_folder_id}' in parents "
+            f"and name = '{zip_name}' "
+            f"and trashed = false"
+        )
+        resp = service.files().list(q=q, fields="files(id)").execute()
+        existing = resp.get("files", [])
 
-        uploaded = 0
-        for file_path in files_to_upload:
-            name = file_path.name
-            media = MediaFileUpload(str(file_path), resumable=False)
+        media = MediaFileUpload(str(zip_path), mimetype="application/zip", resumable=False)
 
-            if name in existing:
-                # Atualiza arquivo existente
-                service.files().update(
-                    fileId=existing[name],
-                    media_body=media,
-                ).execute()
-            else:
-                # Cria novo arquivo
-                file_meta = {"name": name, "parents": [index_folder_id]}
-                service.files().create(
-                    body=file_meta,
-                    media_body=media,
-                    fields="id",
-                    supportsAllDrives=True,
-                ).execute()
+        if existing:
+            # Atualiza arquivo existente — usa cota do dono da pasta
+            service.files().update(
+                fileId=existing[0]["id"],
+                media_body=media,
+            ).execute()
+            print(f"[Drive] ZIP atualizado: '{zip_name}'.")
+        else:
+            # Cria novo arquivo na pasta do usuário
+            service.files().create(
+                body={"name": zip_name, "parents": [gdrive_folder_id]},
+                media_body=media,
+                fields="id",
+            ).execute()
+            print(f"[Drive] ZIP criado no Drive: '{zip_name}'.")
 
-            uploaded += 1
-
-        print(f"[Drive] Índice salvo: {uploaded} arquivo(s) em '{INDEX_FOLDER_NAME}'.")
+        zip_path.unlink(missing_ok=True)
         return True
 
     except Exception as e:
@@ -242,45 +248,45 @@ def upload_index_to_drive(db_dir: str, gdrive_folder_id: str) -> bool:
 
 def download_index_from_drive(db_dir: str, gdrive_folder_id: str) -> bool:
     """
-    Baixa todos os arquivos da pasta '_chroma_index' do Drive para db_dir.
-
+    Baixa o ZIP do índice Chroma do Drive e extrai para db_dir.
     Retorna True se o índice existia e foi baixado com sucesso.
-    Retorna False se a pasta de índice não existir no Drive.
     """
+    import zipfile
+    import tempfile
+
     try:
         service = get_drive_service()
+        zip_name = "chroma_index.zip"
 
-        # Verifica se a pasta de índice existe
+        # Busca o ZIP na pasta pai
         q = (
             f"'{gdrive_folder_id}' in parents "
-            f"and name = '{INDEX_FOLDER_NAME}' "
-            f"and mimeType = 'application/vnd.google-apps.folder' "
+            f"and name = '{zip_name}' "
             f"and trashed = false"
         )
         resp = service.files().list(q=q, fields="files(id, name)").execute()
-        folders = resp.get("files", [])
+        files = resp.get("files", [])
 
-        if not folders:
-            print("[Drive] Pasta de índice '_chroma_index' não encontrada no Drive.")
+        if not files:
+            print("[Drive] Arquivo 'chroma_index.zip' não encontrado no Drive.")
             return False
 
-        index_folder_id = folders[0]["id"]
-        items = _list_children(service, index_folder_id)
+        # Baixa o ZIP para arquivo temporário
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            zip_path = Path(tmp.name)
 
-        if not items:
-            print("[Drive] Pasta '_chroma_index' está vazia no Drive.")
-            return False
+        _download_file(service, files[0]["id"], zip_path)
+        print(f"[Drive] ZIP baixado: {zip_path.stat().st_size // 1024} KB")
 
+        # Extrai para db_dir
         db_path = Path(db_dir)
         db_path.mkdir(parents=True, exist_ok=True)
 
-        for item in items:
-            if item.get("mimeType") == FOLDER_MIME:
-                continue
-            dest = db_path / item["name"]
-            _download_file(service, item["id"], dest)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(db_path)
 
-        print(f"[Drive] Índice baixado: {len(items)} arquivo(s) para '{db_path}'.")
+        zip_path.unlink(missing_ok=True)
+        print(f"[Drive] Índice extraído para '{db_path}'.")
         return True
 
     except Exception as e:
@@ -290,23 +296,17 @@ def download_index_from_drive(db_dir: str, gdrive_folder_id: str) -> bool:
 
 def index_exists_on_drive(gdrive_folder_id: str) -> bool:
     """
-    Verifica rapidamente se o índice já existe no Drive (sem baixar).
+    Verifica rapidamente se o ZIP do índice existe no Drive (sem baixar).
     """
     try:
         service = get_drive_service()
         q = (
             f"'{gdrive_folder_id}' in parents "
-            f"and name = '{INDEX_FOLDER_NAME}' "
-            f"and mimeType = 'application/vnd.google-apps.folder' "
+            f"and name = 'chroma_index.zip' "
             f"and trashed = false"
         )
         resp = service.files().list(q=q, fields="files(id)").execute()
-        folders = resp.get("files", [])
-        if not folders:
-            return False
-        # Verifica se tem arquivos dentro
-        items = _list_children(service, folders[0]["id"])
-        return len(items) > 0
+        return len(resp.get("files", [])) > 0
     except Exception:
         return False
 
