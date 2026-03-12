@@ -21,7 +21,7 @@ from ingest import build_index
 from rag import answer
 
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 EMBED_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 
@@ -261,7 +261,6 @@ with st.sidebar:
             st.success(f"Baixados {len(files)} arquivos para data/raw_docs")
 
         if st.button("2) Recriar índice (embeddings)"):
-            # Garante folder_id mesmo se o campo estiver vazio na tela
             _fid = st.session_state.get("folder_id", "").strip() or os.getenv("GDRIVE_FOLDER_ID", "")
             if not _fid:
                 st.error("GDRIVE_FOLDER_ID não encontrado. Verifique os secrets.")
