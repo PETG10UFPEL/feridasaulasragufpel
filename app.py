@@ -29,7 +29,7 @@ DB_DIR          = "data/chroma_db"
 COLLECTION_NAME = "diet_knowledge"
 
 
-st.set_page_config(page_title="Planejador de Dieta (RAG)", layout="wide")
+st.set_page_config(page_title="Feridas Crônicas - PET G10 UFPel", layout="wide")
 
 # ==============================
 # CSS global
@@ -140,7 +140,7 @@ if banner_b64:
     </div>
     """, unsafe_allow_html=True)
 else:
-    st.title("🥗 Planejador de Dieta - Patrícia")
+    st.title("🩹 Feridas Crônicas - PET G10 UFPel")
 
 # ==============================
 # Links institucionais
@@ -172,11 +172,12 @@ st.markdown(f"""
 # ==============================
 st.markdown("""
 <p class="info-text" style="margin-bottom:0.8rem;">
-  <strong>Patrícia Xavier Bittencourt</strong>, estudante &middot;
-  Disciplina 15001103 M1 &mdash; Princípios de Inteligência Artificial Aplicados &middot;
-  UFPel (2025/6-2) &middot; Prof. Alejandro Martins R. &middot;
-  Sistema elaborado em parceria junto à P&amp;D do Projeto PET UFPel Saúde Digital &mdash;
-  Telemonitoramento de Feridas Crônicas.
+  Sistema de apoio ao ensino &amp; aprendizagem sobre <strong>Feridas Crônicas</strong> &mdash; baseado em RAG-AI
+  sobre o material das disciplinas oferecidas pela professora
+  <a href="https://institucional.ufpel.edu.br/servidores/id/2858" target="_blank">Adrize Rutz Porto</a>,
+  da Faculdade de Enfermagem &ndash; UFPel.<br>
+  Desenvolvimento conjunto em P&amp;D do Projeto
+  <a href="https://www.instagram.com/g10petsaude/" target="_blank">PET UFPel Saúde Digital</a>.
 </p>
 """, unsafe_allow_html=True)
 
@@ -218,13 +219,13 @@ st.markdown("""
 </p>
 """, unsafe_allow_html=True)
 
-_emb_path = Path(__file__).parent / "assets" / "embeddings_alimentos.html"
+_emb_path = Path(__file__).parent / "assets" / "embeddings_feridas.html"
 if _emb_path.exists():
-    with st.expander("📊 Ver Embeddings dos Alimentos", expanded=False):
+    with st.expander("📊 Ver Embeddings da Base de Conhecimento", expanded=False):
         _html_content = _html_com_imagens_embutidas(_emb_path)
         components.html(_html_content, height=700, scrolling=True)
 else:
-    st.caption("_(arquivo embeddings_alimentos.html não encontrado em assets/)_")
+    st.caption("_(arquivo embeddings_feridas.html não encontrado em assets/)_")
 
 st.divider()
 
@@ -388,7 +389,7 @@ mic_component("Pergunta / objetivo", 1)
 q = st.text_area(
     "Pergunta / objetivo",
     height=100,
-    placeholder="Ex.: sugerir plano alimentar de 7 dias, ou ajustar dieta para cicatrização, etc.",
+    placeholder="Ex.: Quais são as fases da cicatrização? Como classificar uma úlcera por pressão? Qual o curativo indicado para ferida com exsudato abundante?",
     label_visibility="collapsed",
 )
 
