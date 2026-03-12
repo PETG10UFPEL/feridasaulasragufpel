@@ -9,10 +9,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ← MUDANÇA: adicionado drive.file para poder criar/atualizar arquivos no Drive
 SCOPES = [
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/drive.file",
+    "https://www.googleapis.com/auth/drive",  # leitura + escrita; usa cota do dono da pasta
 ]
 FOLDER_MIME = "application/vnd.google-apps.folder"
 
@@ -171,7 +169,11 @@ def _get_or_create_index_folder(service, parent_folder_id: str) -> str:
         "mimeType": "application/vnd.google-apps.folder",
         "parents": [parent_folder_id],
     }
-    folder = service.files().create(body=folder_meta, fields="id").execute()
+    folder = service.files().create(
+        body=folder_meta,
+        fields="id",
+        supportsAllDrives=True,
+    ).execute()
     print(f"[Drive] Pasta '{INDEX_FOLDER_NAME}' criada no Drive.")
     return folder["id"]
 
@@ -225,6 +227,7 @@ def upload_index_to_drive(db_dir: str, gdrive_folder_id: str) -> bool:
                     body=file_meta,
                     media_body=media,
                     fields="id",
+                    supportsAllDrives=True,
                 ).execute()
 
             uploaded += 1

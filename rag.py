@@ -19,10 +19,11 @@ except Exception:
 
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+import functools
 from typing import Tuple, List, Optional
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from langchain_community.vectorstores import Chroma
+from langchain_chroma import Chroma
 
 DB_DIR_DEFAULT      = "data/chroma_db"
 COLLECTION_NAME     = "diet_knowledge"
@@ -45,8 +46,9 @@ MODO DE OPERAÇÃO HÍBRIDO:
 """
 
 
+@functools.lru_cache(maxsize=1)
 def _get_embeddings() -> HuggingFaceEmbeddings:
-    """Embeddings locais — sem API key, sem cota."""
+    """Embeddings locais — sem API key, sem cota. Cached para não recarregar o modelo."""
     return HuggingFaceEmbeddings(
         model_name=EMBED_MODEL,
         model_kwargs={"device": "cpu"},
@@ -54,8 +56,9 @@ def _get_embeddings() -> HuggingFaceEmbeddings:
     )
 
 
+@functools.lru_cache(maxsize=4)
 def _get_db_from_disk(db_dir: str = DB_DIR_DEFAULT) -> Chroma:
-    """Carrega um índice já persistido em disco (uso local)."""
+    """Carrega um índice já persistido em disco. Cached para não reabrir a cada chamada."""
     return Chroma(
         persist_directory=db_dir,
         embedding_function=_get_embeddings(),
