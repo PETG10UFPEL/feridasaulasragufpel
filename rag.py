@@ -34,7 +34,7 @@ except Exception:
     st = None  # type: ignore
 
 
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 BASE_DIR = Path(__file__).resolve().parent
 DB_DIR_DEFAULT = str(BASE_DIR / "data" / "chroma_db")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "wounds_knowledge")
